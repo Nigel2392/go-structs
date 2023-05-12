@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+func IsRequired(field reflect.StructField) bool {
+	return strings.Contains(field.Tag.Get("structs"), "required")
+}
+
 type Struct struct {
 	// There is an optional parameter "required" for the fields of the struct.
 	//
