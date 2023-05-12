@@ -1,0 +1,254 @@
+package structs
+
+import (
+	"fmt"
+	"reflect"
+)
+
+type Struct struct {
+	// There is an optional parameter "required" for the fields of the struct.
+	//
+	// This can be used to determine whether the field is required or not in serialization for example.
+	tag          string                // Default tag to use for enc_name
+	fieldsByName []reflect.StructField // Inner fields.
+	sstruct      reflect.Type          // The struct type
+	structValue  reflect.Value         // The struct value
+	made         bool                  // Whether the struct has been made or not
+}
+
+func From(v interface{}, tag string) *Struct {
+	var s = New(tag)
+	switch v := v.(type) {
+	case reflect.Value:
+		if v.Kind() != reflect.Struct {
+			panic(fmt.Sprintf("Cannot create struct from value of type %s", v.Kind().String()))
+		}
+		s.structValue = v
+		s.sstruct = s.structValue.Type()
+	case reflect.Type:
+		if v.Kind() != reflect.Struct {
+			panic(fmt.Sprintf("Cannot create struct from type of type %s", v.Kind().String()))
+		}
+		s.sstruct = v
+		s.structValue = reflect.New(s.sstruct).Elem()
+	case Struct:
+		s.sstruct = v.sstruct
+		s.structValue = reflect.New(s.sstruct).Elem()
+	default:
+		s.sstruct = reflect.TypeOf(v)
+		s.structValue = reflect.New(s.sstruct).Elem()
+	}
+	for i := 0; i < s.sstruct.NumField(); i++ {
+		var field = s.sstruct.Field(i)
+		var enc_name = field.Tag.Get(tag)
+		if enc_name == "-" {
+			continue
+		}
+		var absolute_name = field.Name
+		s.AddField(absolute_name, enc_name, field.Type)
+	}
+	return s
+}
+
+func New(tag string) *Struct {
+	return &Struct{
+		tag:          tag,
+		fieldsByName: make([]reflect.StructField, 0),
+	}
+}
+
+func (s *Struct) FieldByName(name string) reflect.Value {
+	s.checkMade("Cannot get field by name if struct has not been made")
+	return s.structValue.FieldByName(name)
+}
+
+// Field returns the field at the given index
+//
+// It will panic if the struct has not been made.
+func (s *Struct) Field(index int) reflect.StructField {
+	s.checkMade("Cannot get field by index if struct has not been made")
+	return s.sstruct.Field(index)
+}
+
+func (s *Struct) checkMade(msg string) {
+	if !s.made {
+		panic(msg)
+	}
+}
+
+// IsValid returns whether the struct is valid or not
+//
+// It will return false if the struct has not been made.
+//
+// Thus, it will return false if any fields have been added, and the made flag has been reset.
+//
+// Most other methods will panic if the struct is not made, or valid.
+func (s *Struct) IsValid() bool {
+	return s.made && s.structValue.IsValid()
+}
+
+// NumField returns the amount of fields in the struct
+//
+// If the struct has not been made, it will return 0.
+func (s *Struct) NumField() int {
+	if !s.made {
+		return 0
+	}
+	return s.sstruct.NumField()
+}
+
+// Returns the amount of fields that have been added to the struct
+//
+// This is useful for when you want to know how many fields have been added, but the struct has not been made yet.
+func (s *Struct) NumUninitializedField() int {
+	return len(s.fieldsByName)
+}
+
+func (s *Struct) Interface() interface{} {
+	s.checkMade("Cannot get interface if struct has not been made")
+	return s.structValue.Interface()
+}
+
+func (s *Struct) PtrTo() interface{} {
+	s.checkMade("Cannot get pointer to if struct has not been made")
+	return s.structValue.Addr().Interface()
+}
+
+func (s *Struct) SetField(name string, value interface{}) {
+	s.checkMade("Cannot set field if struct has not been made")
+	var field = s.structValue.FieldByName(name)
+	if !field.IsValid() {
+		panic(fmt.Sprintf("Field %s does not exist", name))
+	}
+	var valueOf = valueOf(value)
+	if valueOf.Kind() == reflect.Ptr {
+		valueOf = valueOf.Elem()
+	}
+	if field.Kind() != valueOf.Kind() {
+		panic(fmt.Sprintf("Cannot set field %s with value of type %s", name, valueOf.Kind().String()))
+	}
+	field.Set(valueOf)
+}
+
+func (s *Struct) SetFieldByIndex(index int, value interface{}) {
+	s.checkMade("Cannot set field if struct has not been made")
+	var field = s.structValue.Field(index)
+	if !field.IsValid() {
+		panic(fmt.Sprintf("Field %d does not exist", index))
+	}
+	var valueOf = valueOf(value)
+	if valueOf.Kind() == reflect.Ptr {
+		valueOf = valueOf.Elem()
+	}
+	if field.Kind() != valueOf.Kind() {
+		panic(fmt.Sprintf("Cannot set field %d with value of type %s", index, valueOf.Kind().String()))
+	}
+	field.Set(valueOf)
+}
+
+// Deep copy of the struct
+//
+// This is useful for when you want to modify a struct without modifying the original
+func (s *Struct) DeepCopy() *Struct {
+	s.checkMade("Cannot deep copy if struct has not been made")
+	var newStruct = New(s.tag)
+	for _, field := range s.fieldsByName {
+		newStruct.AddField(field.Name, field.Tag.Get(s.tag), field.Type)
+	}
+	newStruct.Make()
+	for _, field := range s.fieldsByName {
+		var newFieldByIndex = newStruct.structValue.FieldByIndex(field.Index)
+		if newFieldByIndex.Kind() == reflect.Ptr {
+			newFieldByIndex = newFieldByIndex.Elem()
+		}
+		var fieldByIndex = s.structValue.FieldByIndex(field.Index)
+		if fieldByIndex.Kind() == reflect.Ptr {
+			fieldByIndex = fieldByIndex.Elem()
+		}
+		newFieldByIndex.Set(fieldByIndex)
+	}
+	return newStruct
+}
+
+func valueOf(v interface{}) reflect.Value {
+	switch v.(type) {
+	case reflect.Value:
+		return v.(reflect.Value)
+	default:
+		return reflect.ValueOf(v)
+	}
+}
+
+func (s *Struct) AddField(absolute_name, enc_name string, typeOf reflect.Type, required ...bool) {
+	if absolute_name == "" {
+		panic("Field name cannot be empty")
+	}
+	if enc_name == "" {
+		enc_name = absolute_name
+	}
+	for _, field := range s.fieldsByName {
+		if field.Name == absolute_name {
+			panic(fmt.Sprintf("Field %s already exists", absolute_name))
+		}
+	}
+	// If the struct has already been made,
+	// we need to reset the flag so the Make() method will re-make it
+	s.made = false
+	var field = reflect.StructField{
+		Name: absolute_name,
+		Tag: reflect.StructTag(
+			fmt.Sprintf(`%s:"%s" structs:"required=%t"`,
+				s.tag,
+				enc_name,
+				len(required) > 0 && required[0]),
+		),
+		Type:      typeOf,
+		Anonymous: false,
+	}
+	s.fieldsByName = append(s.fieldsByName, field)
+}
+
+func (s *Struct) StringField(name, absolute_name string, required ...bool) {
+	s.AddField(absolute_name, name, reflect.TypeOf(""), required...)
+}
+
+func (s *Struct) IntField(name, absolute_name string, required ...bool) {
+	s.AddField(absolute_name, name, reflect.TypeOf(0), required...)
+}
+
+func (s *Struct) FloatField(name, absolute_name string, required ...bool) {
+	s.AddField(absolute_name, name, reflect.TypeOf(0.0), required...)
+}
+
+func (s *Struct) BoolField(name, absolute_name string, required ...bool) {
+	s.AddField(absolute_name, name, reflect.TypeOf(false), required...)
+}
+
+func (s *Struct) SliceField(name, absolute_name string, typeOf reflect.Type, required ...bool) {
+	s.AddField(absolute_name, name, reflect.SliceOf(typeOf), required...)
+}
+
+func (s *Struct) MapField(name, absolute_name string, typeOfKey, typeOfValue reflect.Type, required ...bool) {
+	if !typeOfKey.Comparable() {
+		panic(fmt.Sprintf("Map key type %s is not comparable", typeOfKey.String()))
+	}
+	s.AddField(absolute_name, name, reflect.MapOf(typeOfKey, typeOfValue), required...)
+}
+
+func (s *Struct) StructField(name, absolute_name string, other *Struct, required ...bool) {
+	s.AddField(absolute_name, name, other.sstruct, required...)
+}
+
+func (s *Struct) Remake() {
+	s.sstruct = reflect.StructOf(s.fieldsByName)
+	var NewOf = reflect.New(s.sstruct)
+	s.structValue = NewOf.Elem()
+	s.made = true
+}
+
+func (s *Struct) Make() {
+	if s.made {
+		return
+	}
+	s.Remake()
+}
