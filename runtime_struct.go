@@ -208,10 +208,6 @@ func (s *Struct) AddField(absolute_name, enc_name string, typeOf reflect.Type, r
 		}
 	}
 
-	if absolute_name == strings.ToLower(absolute_name) {
-		panic(fmt.Sprintf("Absolute name of field %s must be capitalized (Exported)", absolute_name))
-	}
-
 	// If the struct has already been made,
 	// we need to reset the flag so the Make() method will re-make it
 	s.made = false
