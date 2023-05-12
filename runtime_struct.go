@@ -3,6 +3,7 @@ package structs
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 type Struct struct {
@@ -153,9 +154,11 @@ func (s *Struct) DeepCopy() *Struct {
 	s.checkMade("Cannot deep copy if struct has not been made")
 	var newStruct = New(s.tag)
 	for _, field := range s.fieldsByName {
-		newStruct.AddField(field.Name, field.Tag.Get(s.tag), field.Type)
+		newStruct.AddField(field.Name, field.Tag.Get(s.tag), field.Type, field.Tag.Get("structs") == "required")
 	}
+
 	newStruct.Make()
+
 	for _, field := range s.fieldsByName {
 		var newFieldByIndex = newStruct.structValue.FieldByIndex(field.Index)
 		if newFieldByIndex.Kind() == reflect.Ptr {
@@ -165,6 +168,15 @@ func (s *Struct) DeepCopy() *Struct {
 		if fieldByIndex.Kind() == reflect.Ptr {
 			fieldByIndex = fieldByIndex.Elem()
 		}
+
+		if fieldByIndex.Kind() != newFieldByIndex.Kind() {
+			panic(fmt.Sprintf("Cannot deep copy field %s, because the types are different", field.Name))
+		}
+
+		if !newFieldByIndex.CanSet() {
+			panic(fmt.Sprintf("Cannot deep copy field %s, because it cannot be set", field.Name))
+		}
+
 		newFieldByIndex.Set(fieldByIndex)
 	}
 	return newStruct
@@ -191,64 +203,79 @@ func (s *Struct) AddField(absolute_name, enc_name string, typeOf reflect.Type, r
 			panic(fmt.Sprintf("Field %s already exists", absolute_name))
 		}
 	}
+
+	if absolute_name == strings.ToLower(absolute_name) {
+		panic(fmt.Sprintf("Absolute name of field %s must be capitalized (Exported)", absolute_name))
+	}
+
 	// If the struct has already been made,
 	// we need to reset the flag so the Make() method will re-make it
 	s.made = false
+	var tag string = fmt.Sprintf(`%s:"%s"`, s.tag, enc_name)
+	if len(required) > 0 && required[0] {
+		tag += fmt.Sprintf(` structs:"required"`)
+	}
 	var field = reflect.StructField{
-		Name: absolute_name,
-		Tag: reflect.StructTag(
-			fmt.Sprintf(`%s:"%s" structs:"required=%t"`,
-				s.tag,
-				enc_name,
-				len(required) > 0 && required[0]),
-		),
+		Name:      absolute_name,
+		Tag:       reflect.StructTag(tag),
 		Type:      typeOf,
 		Anonymous: false,
 	}
 	s.fieldsByName = append(s.fieldsByName, field)
 }
 
-func (s *Struct) StringField(name, absolute_name string, required ...bool) {
+func (s *Struct) StringField(absolute_name, name string, required ...bool) {
 	s.AddField(absolute_name, name, reflect.TypeOf(""), required...)
 }
 
-func (s *Struct) IntField(name, absolute_name string, required ...bool) {
+func (s *Struct) IntField(absolute_name, name string, required ...bool) {
 	s.AddField(absolute_name, name, reflect.TypeOf(0), required...)
 }
 
-func (s *Struct) FloatField(name, absolute_name string, required ...bool) {
+func (s *Struct) FloatField(absolute_name, name string, required ...bool) {
 	s.AddField(absolute_name, name, reflect.TypeOf(0.0), required...)
 }
 
-func (s *Struct) BoolField(name, absolute_name string, required ...bool) {
+func (s *Struct) BoolField(absolute_name, name string, required ...bool) {
 	s.AddField(absolute_name, name, reflect.TypeOf(false), required...)
 }
 
-func (s *Struct) SliceField(name, absolute_name string, typeOf reflect.Type, required ...bool) {
+func (s *Struct) SliceField(absolute_name, name string, typeOf reflect.Type, required ...bool) {
 	s.AddField(absolute_name, name, reflect.SliceOf(typeOf), required...)
 }
 
-func (s *Struct) MapField(name, absolute_name string, typeOfKey, typeOfValue reflect.Type, required ...bool) {
+func (s *Struct) MapField(absolute_name, name string, typeOfKey, typeOfValue reflect.Type, required ...bool) {
 	if !typeOfKey.Comparable() {
 		panic(fmt.Sprintf("Map key type %s is not comparable", typeOfKey.String()))
 	}
 	s.AddField(absolute_name, name, reflect.MapOf(typeOfKey, typeOfValue), required...)
 }
 
-func (s *Struct) StructField(name, absolute_name string, other *Struct, required ...bool) {
+func (s *Struct) StructField(absolute_name, name string, other *Struct, required ...bool) {
 	s.AddField(absolute_name, name, other.sstruct, required...)
 }
 
+func (s *Struct) GetField(name string) interface{} {
+	s.checkMade("Cannot get field if struct has not been made")
+	var field = s.structValue.FieldByName(name)
+	if !field.IsValid() {
+		panic(fmt.Sprintf("Field %s does not exist", name))
+	}
+	return field.Interface()
+}
+
 func (s *Struct) Remake() {
-	s.sstruct = reflect.StructOf(s.fieldsByName)
-	var NewOf = reflect.New(s.sstruct)
-	s.structValue = NewOf.Elem()
-	s.made = true
+	s.made = false
+	s.Make()
 }
 
 func (s *Struct) Make() {
-	if s.made {
-		return
+	if !s.made {
+		s.sstruct = reflect.StructOf(s.fieldsByName)
+		s.made = true
 	}
-	s.Remake()
+	if s.made {
+		var NewOf = reflect.New(s.sstruct)
+		s.structValue = NewOf.Elem()
+	}
 }
