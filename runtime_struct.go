@@ -21,30 +21,46 @@ type Struct struct {
 	made         bool                  // Whether the struct has been made or not
 }
 
-func From(v interface{}, tag string) *Struct {
+func From(v interface{}, tag string, fields ...string) *Struct {
 	var s = New(tag)
+	var structTyp reflect.Type
+	var structVal reflect.Value
 	switch v := v.(type) {
 	case reflect.Value:
 		if v.Kind() != reflect.Struct {
 			panic(fmt.Sprintf("Cannot create struct from value of type %s", v.Kind().String()))
 		}
-		s.structValue = v
-		s.sstruct = s.structValue.Type()
+		structVal = v
+		structTyp = structVal.Type()
 	case reflect.Type:
 		if v.Kind() != reflect.Struct {
 			panic(fmt.Sprintf("Cannot create struct from type of type %s", v.Kind().String()))
 		}
-		s.sstruct = v
-		s.structValue = reflect.New(s.sstruct).Elem()
+		structTyp = v
+		structVal = reflect.New(structTyp).Elem()
 	case Struct:
-		s.sstruct = v.sstruct
-		s.structValue = reflect.New(s.sstruct).Elem()
+		structTyp = v.sstruct
+		structVal = reflect.New(structTyp).Elem()
 	default:
-		s.sstruct = reflect.TypeOf(v)
-		s.structValue = reflect.New(s.sstruct).Elem()
+		structTyp = reflect.TypeOf(v)
+		structVal = reflect.New(structTyp).Elem()
 	}
-	for i := 0; i < s.sstruct.NumField(); i++ {
-		var field = s.sstruct.Field(i)
+	if len(fields) > 0 {
+		for _, field := range fields {
+			var f, ok = structTyp.FieldByName(field)
+			if !ok {
+				panic(fmt.Sprintf("Field %s does not exist in struct %s", field, structTyp.Name()))
+			}
+			var enc_name = f.Tag.Get(tag)
+			if enc_name == "-" {
+				continue
+			}
+			s.AddField(field, enc_name, f.Type)
+		}
+		return s
+	}
+	for i := 0; i < structTyp.NumField(); i++ {
+		var field = structTyp.Field(i)
 		var enc_name = field.Tag.Get(tag)
 		if enc_name == "-" {
 			continue
