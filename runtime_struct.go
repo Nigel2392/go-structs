@@ -342,7 +342,7 @@ func (s *Struct) Scan(src interface{}, fields ...string) error {
 	return ScanInto(src, s.PtrTo(), []string{s.tag}, nil, fields...)
 }
 
-func ScanInto(s, dest interface{}, neededTags []string, validators map[string][]func(interface{}) error, fields ...string) error {
+func ScanInto(s, dest interface{}, neededTags []string, validators ValidatorMap, fields ...string) error {
 	var iFace any
 	switch s.(type) {
 	case *Struct:
@@ -353,7 +353,7 @@ func ScanInto(s, dest interface{}, neededTags []string, validators map[string][]
 	return scanInto(iFace, dest, neededTags, validators, fields...)
 }
 
-func scanInto(s, dest interface{}, neededTags []string, validators map[string][]func(interface{}) error, fields ...string) error {
+func scanInto(s, dest interface{}, neededTags []string, validators ValidatorMap, fields ...string) error {
 	var typeOfSource = reflect.TypeOf(s)
 	var valueOfSource = reflect.ValueOf(s)
 	var typeOfDest = reflect.TypeOf(dest)
@@ -382,16 +382,6 @@ func scanInto(s, dest interface{}, neededTags []string, validators map[string][]
 		}
 		var name = field.Name
 
-		if validators != nil {
-			if validators, ok := validators[name]; ok {
-				for _, validator := range validators {
-					if err := validator(valueOfSource.Field(i).Interface()); err != nil {
-						return err
-					}
-				}
-			}
-		}
-
 		if len(fields) > 0 {
 			var found bool
 			for _, f := range fields {
@@ -415,6 +405,13 @@ func scanInto(s, dest interface{}, neededTags []string, validators map[string][]
 		if destField.Type() != value.Type() {
 			continue
 		}
+
+		if validators != nil {
+			if err := validators.Validate(name, value.Interface()); err != nil {
+				return err
+			}
+		}
+
 		destField.Set(value)
 	}
 	return nil
