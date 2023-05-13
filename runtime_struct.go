@@ -224,6 +224,25 @@ func (s *Struct) AddField(absolute_name, enc_name string, typeOf reflect.Type, r
 	s.fieldsByName = append(s.fieldsByName, field)
 }
 
+func (s *Struct) AddStructField(absolute_name string, field reflect.StructField) {
+	if absolute_name == "" {
+		panic("Field name cannot be empty")
+	}
+	for _, field := range s.fieldsByName {
+		if field.Name == absolute_name {
+			panic(fmt.Sprintf("Field %s already exists", absolute_name))
+		}
+	}
+	if field.Anonymous {
+		panic("Cannot add anonymous field")
+	}
+
+	// If the struct has already been made,
+	// we need to reset the flag so the Make() method will re-make it
+	s.made = false
+	s.fieldsByName = append(s.fieldsByName, field)
+}
+
 func (s *Struct) StringField(absolute_name, name string, required ...bool) {
 	s.AddField(absolute_name, name, reflect.TypeOf(""), required...)
 }
