@@ -330,11 +330,17 @@ func ScanInto(s, dest interface{}, fields ...string) error {
 func scanInto(s, dest interface{}, fields ...string) error {
 	var typeOfSource = reflect.TypeOf(s)
 	var typeOfDest = reflect.TypeOf(dest)
+	if typeOfSource.Kind() == reflect.Ptr {
+		typeOfSource = typeOfSource.Elem()
+	}
 	if typeOfSource.Kind() != reflect.Struct {
 		return fmt.Errorf("Source is not a struct")
 	}
 	if typeOfDest.Kind() != reflect.Ptr {
 		return fmt.Errorf("Destination is not a pointer")
+	}
+	if typeOfDest.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("Destination is not a pointer to a struct")
 	}
 	var valueOfSource = reflect.ValueOf(s)
 	var valueOfDest = reflect.ValueOf(dest)
