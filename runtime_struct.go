@@ -316,7 +316,12 @@ func (s *Struct) Make() {
 	}
 }
 
-func ScanInto(s, dest interface{}, fields ...string) error {
+func (s *Struct) Scan(src interface{}, fields ...string) error {
+	s.Make()
+	return ScanInto(src, s.PtrTo(), []string{s.tag}, fields...)
+}
+
+func ScanInto(s, dest interface{}, neededTags []string, fields ...string) error {
 	var iFace any
 	switch s.(type) {
 	case *Struct:
@@ -324,10 +329,10 @@ func ScanInto(s, dest interface{}, fields ...string) error {
 	default:
 		iFace = s
 	}
-	return scanInto(iFace, dest, fields...)
+	return scanInto(iFace, dest, neededTags, fields...)
 }
 
-func scanInto(s, dest interface{}, fields ...string) error {
+func scanInto(s, dest interface{}, neededTags []string, fields ...string) error {
 	var typeOfSource = reflect.TypeOf(s)
 	var valueOfSource = reflect.ValueOf(s)
 	var typeOfDest = reflect.TypeOf(dest)
@@ -349,6 +354,11 @@ func scanInto(s, dest interface{}, fields ...string) error {
 	var numFields = typeOfSource.NumField()
 	for i := 0; i < numFields; i++ {
 		var field = typeOfSource.Field(i)
+		for _, tag := range neededTags {
+			if field.Tag.Get(tag) == "-" {
+				continue
+			}
+		}
 		var name = field.Name
 		if len(fields) > 0 {
 			var found bool
