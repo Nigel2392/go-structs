@@ -224,13 +224,13 @@ func (s *Struct) AddField(absolute_name, enc_name string, typeOf reflect.Type, r
 	s.fieldsByName = append(s.fieldsByName, field)
 }
 
-func (s *Struct) AddStructField(absolute_name string, field reflect.StructField) {
-	if absolute_name == "" {
+func (s *Struct) AddStructField(field reflect.StructField) {
+	if field.Name == "" {
 		panic("Field name cannot be empty")
 	}
-	for _, field := range s.fieldsByName {
-		if field.Name == absolute_name {
-			panic(fmt.Sprintf("Field %s already exists", absolute_name))
+	for _, f := range s.fieldsByName {
+		if f.Name == field.Name {
+			panic(fmt.Sprintf("Field %s already exists", field.Name))
 		}
 	}
 	if field.Anonymous {
