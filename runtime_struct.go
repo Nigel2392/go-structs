@@ -131,6 +131,11 @@ func (s *Struct) Interface() interface{} {
 	return s.structValue.Interface()
 }
 
+func (s *Struct) NewPointer() interface{} {
+	s.checkMade("Cannot get new pointer if struct has not been made")
+	return reflect.New(s.sstruct).Interface()
+}
+
 func (s *Struct) PtrTo() interface{} {
 	s.checkMade("Cannot get pointer to if struct has not been made")
 	return s.structValue.Addr().Interface()
@@ -317,6 +322,22 @@ func (s *Struct) Make() {
 }
 
 func (s *Struct) Scan(src interface{}, fields ...string) error {
+	if len(s.fieldsByName) == 0 {
+		var typeOf = reflect.TypeOf(src)
+		if typeOf.Kind() == reflect.Ptr {
+			typeOf = typeOf.Elem()
+		}
+		if typeOf.Kind() != reflect.Struct {
+			return fmt.Errorf("Cannot scan into a non-struct type %s", typeOf.String())
+		}
+		for _, field := range fields {
+			var f, ok = typeOf.FieldByName(field)
+			if !ok {
+				return fmt.Errorf("Field %s does not exist in type %s", field, typeOf.String())
+			}
+			s.AddStructField(f)
+		}
+	}
 	s.Make()
 	return ScanInto(src, s.PtrTo(), []string{s.tag}, fields...)
 }
