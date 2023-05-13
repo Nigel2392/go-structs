@@ -1,5 +1,9 @@
 package structs
 
+import (
+	"fmt"
+)
+
 type ValidatorMap map[string][]func(interface{}) error
 
 func (v ValidatorMap) Add(field string, validator func(interface{}) error) {
@@ -17,7 +21,7 @@ func (v ValidatorMap) Remove(field string) {
 func (v ValidatorMap) Validate(field string, value interface{}) error {
 	for _, validator := range v[field] {
 		if err := validator(value); err != nil {
-			return err
+			return fmt.Errorf("%s: %s", field, err)
 		}
 	}
 	return nil
