@@ -1,6 +1,7 @@
 package structs
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -313,4 +314,69 @@ func (s *Struct) Make() {
 		var NewOf = reflect.New(s.sstruct)
 		s.structValue = NewOf.Elem()
 	}
+}
+
+func ScanInto(s, dest interface{}, fields ...string) error {
+	var iFace any
+	switch s.(type) {
+	case *Struct:
+		iFace = s.(*Struct).Interface()
+	default:
+		iFace = s
+	}
+	return scanInto(iFace, dest, fields...)
+}
+
+func scanInto(s, dest interface{}, fields ...string) error {
+	var typeOfSource = reflect.TypeOf(s)
+	var typeOfDest = reflect.TypeOf(dest)
+	if typeOfSource.Kind() != reflect.Struct {
+		return fmt.Errorf("Source is not a struct")
+	}
+	if typeOfDest.Kind() != reflect.Ptr {
+		return fmt.Errorf("Destination is not a pointer")
+	}
+	var valueOfSource = reflect.ValueOf(s)
+	var valueOfDest = reflect.ValueOf(dest)
+	var valueOfDestElem = valueOfDest.Elem()
+	var numFields = typeOfSource.NumField()
+	for i := 0; i < numFields; i++ {
+		var field = typeOfSource.Field(i)
+		var name = field.Name
+		if len(fields) > 0 {
+			var found bool
+			for _, f := range fields {
+				if f == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		var value = valueOfSource.Field(i)
+		var destField = valueOfDestElem.FieldByName(name)
+		if !destField.IsValid() {
+			continue
+		}
+		if !destField.CanSet() {
+			continue
+		}
+		if destField.Type() != value.Type() {
+			continue
+		}
+		destField.Set(value)
+	}
+	return nil
+}
+
+func (s *Struct) MarshalJSON() ([]byte, error) {
+	s.checkMade("Cannot marshal if struct has not been made")
+	return json.Marshal(s.structValue.Interface())
+}
+
+func (s *Struct) UnmarshalJSON(data []byte) error {
+	s.checkMade("Cannot unmarshal if struct has not been made")
+	return json.Unmarshal(data, s.structValue.Addr().Interface())
 }
